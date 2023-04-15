@@ -1,0 +1,154 @@
+/*
+Covid 19 Data Exploration 
+Skills used: Joins, CTE's, Temp Tables, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
+*/
+
+SELECT * FROM `rock-elevator-382815.SQL_Project.Covid_Death`
+WHERE continent IS NOT NULL
+ORDER BY 3,4
+
+
+-- Select Data that we are going to be starting with
+
+SELECT location, date, total_cases, new_cases, total_deaths, population 
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+WHERE continent IS NOT NULL
+ORDER BY 1,2
+
+
+-- Total Cases vs Total Deaths
+-- Shows likelihood of dying if you contract covid in your country
+
+SELECT location, date,total_cases, total_deaths, (total_deaths/ total_cases)*100 AS Dealth_Pertentage
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+WHERE location LIKE '%States%'
+AND continent IS NOT NULL
+ORDER BY 1,2
+
+
+
+-- Total Cases vs Population
+-- Shows what percentage of population infected with Covid
+
+SELECT location, date, population, total_cases, (total_cases / population)*100 AS TotalCase_Pertentage
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+WHERE location LIKE '%States%'
+AND continent IS NOT NULL
+ORDER BY 1,2
+
+
+
+-- Countries with Highest Infection Rate compared to Population
+
+SELECT location, population, MAX(total_cases) AS Highest_Infection_Count, MAX(total_cases/population)*100 AS Percentage_Population_Infected
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+WHERE LOWER(location) LIKE '%states%'
+AND continent IS NOT NULL
+GROUP BY location, population
+ORDER BY Percentage_Population_Infected DESC
+
+
+
+-- Countries with Highest Death Count per Population
+
+SELECT location, population, MAX(total_deaths) AS Highest_Death_Count, MAX(total_deaths/population)*100 AS Percentage_Population_Death
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+--WHERE LOWER(location) LIKE '%states%'
+WHERE continent IS NOT NULL
+GROUP BY location, population
+ORDER BY population DESC
+
+
+
+-- BREAKING THINGS DOWN BY CONTINENT
+-- Showing contintents with the highest death count per population
+
+SELECT continent, MAX(total_deaths) AS Highest_Death_Count, MAX(total_deaths/population)*100 AS Percentage_Population_Death
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+--WHERE LOWER(location) LIKE '%states%'
+WHERE continent IS NOT NULL
+GROUP BY continent
+ORDER BY Highest_Death_Count DESC
+
+
+--GOLBAL NUMBERS 
+
+SELECT date, 
+       SUM(new_cases), 
+       SUM(new_deaths), 
+       CASE WHEN SUM(new_cases) = 0 THEN NULL ELSE (SUM(new_deaths) / SUM(new_cases)) END
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
+--WHERE location LIKE '%States%'
+--AND continent IS NOT NULL
+GROUP BY date
+ORDER BY 1
+
+
+
+--Looking for Total Population VS Vaccinations
+
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
+       SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccinated
+-- , (RollingPeopleVaccinated/population)*100
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
+JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL 
+ORDER BY 2,3
+
+
+
+-- Using CTE to perform Calculation on Partition By in previous query
+-- Shows Percentage of Population that has recieved at least one Covid Vaccine
+
+WITH popVSvac AS
+(
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccination
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
+JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
+	ON dea.location = vac.location
+	AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL 
+AND vac.new_vaccinations IS NOT NULL
+--ORDER BY 2,3
+)
+SELECT *, (RollingPeopleVaccination/population)*100 AS VaccinationPercentage
+FROM popVSvac
+
+
+
+-- Using Temp Table to perform Calculation on Partition By in previous query
+
+CREATE TEMPORARY TABLE PercentPopulationVaccinated AS
+SELECT 
+  dea.continent, 
+  dea.location, 
+  dea.date, 
+  dea.population, 
+  vac.new_vaccinations, 
+  SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccination
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
+JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL 
+AND vac.new_vaccinations IS NOT NULL;
+
+SELECT *, (RollingPeopleVaccination/population)*100 AS VaccinationPercentage
+FROM PercentPopulationVaccinated;
+
+
+
+-- Creating View to store data for later visualizations
+
+CREATE VIEW `rock-elevator-382815.SQL_Project.PercentPopulationVaccinated` AS
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
+       SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccinated
+-- , (RollingPeopleVaccinated/population)*100
+FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
+JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL
+ 
