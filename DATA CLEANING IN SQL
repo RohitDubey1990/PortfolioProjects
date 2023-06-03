@@ -1,154 +1,197 @@
 /*
-Covid 19 Data Exploration 
-Skills used: Joins, CTE's, Temp Tables, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
+
+Cleaning Data in SQL Queries
+
 */
 
-SELECT * FROM `rock-elevator-382815.SQL_Project.Covid_Death`
-WHERE continent IS NOT NULL
-ORDER BY 3,4
+SELECT *
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+limit 100
 
+-----------------------------------------------------------------------------------------------------
 
--- Select Data that we are going to be starting with
+-- Standardize Date Format
 
-SELECT location, date, total_cases, new_cases, total_deaths, population 
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
-WHERE continent IS NOT NULL
-ORDER BY 1,2
+SELECT *
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE SAFE.PARSE_DATE('%B %d, %Y', SaleDate) IS NULL
 
+UPDATE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+SET SaleDate = 'April 7, 2015'
+WHERE SaleDate = '20150407-0030110'
 
--- Total Cases vs Total Deaths
--- Shows likelihood of dying if you contract covid in your country
+-- Create backup table before replacing the original data
+CREATE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
 
-SELECT location, date,total_cases, total_deaths, (total_deaths/ total_cases)*100 AS Dealth_Pertentage
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
-WHERE location LIKE '%States%'
-AND continent IS NOT NULL
-ORDER BY 1,2
+-- replacing the exsisting table, with orginal table + SaleDate_converted column
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
+SELECT *,
+FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%B %d, %Y', SaleDate)) AS SaleDate_converted
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+-- removing the SaleDate_converted temporary column
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
+SELECT UniqueID_, ParcelID, LandUse, PropertyAddress, SalePrice, LegalReference, SoldAsVacant, OwnerName, OwnerAddress, Acreage, TaxDistrict, LandValue, BuildingValue, TotalValue, YearBuilt, Bedrooms, FullBath, HalfBath,
+SaleDate_converted as SaleDate
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
 
+------------------------------------------------------------------------------------------------------------
 
+-- Populate Property Address data
 
--- Total Cases vs Population
--- Shows what percentage of population infected with Covid
-
-SELECT location, date, population, total_cases, (total_cases / population)*100 AS TotalCase_Pertentage
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
-WHERE location LIKE '%States%'
-AND continent IS NOT NULL
-ORDER BY 1,2
-
-
-
--- Countries with Highest Infection Rate compared to Population
-
-SELECT location, population, MAX(total_cases) AS Highest_Infection_Count, MAX(total_cases/population)*100 AS Percentage_Population_Infected
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
-WHERE LOWER(location) LIKE '%states%'
-AND continent IS NOT NULL
-GROUP BY location, population
-ORDER BY Percentage_Population_Infected DESC
-
-
-
--- Countries with Highest Death Count per Population
-
-SELECT location, population, MAX(total_deaths) AS Highest_Death_Count, MAX(total_deaths/population)*100 AS Percentage_Population_Death
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
---WHERE LOWER(location) LIKE '%states%'
-WHERE continent IS NOT NULL
-GROUP BY location, population
-ORDER BY population DESC
-
-
-
--- BREAKING THINGS DOWN BY CONTINENT
--- Showing contintents with the highest death count per population
-
-SELECT continent, MAX(total_deaths) AS Highest_Death_Count, MAX(total_deaths/population)*100 AS Percentage_Population_Death
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
---WHERE LOWER(location) LIKE '%states%'
-WHERE continent IS NOT NULL
-GROUP BY continent
-ORDER BY Highest_Death_Count DESC
-
-
---GOLBAL NUMBERS 
-
-SELECT date, 
-       SUM(new_cases), 
-       SUM(new_deaths), 
-       CASE WHEN SUM(new_cases) = 0 THEN NULL ELSE (SUM(new_deaths) / SUM(new_cases)) END
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` 
---WHERE location LIKE '%States%'
---AND continent IS NOT NULL
-GROUP BY date
-ORDER BY 1
-
-
-
---Looking for Total Population VS Vaccinations
-
-SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
-       SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccinated
--- , (RollingPeopleVaccinated/population)*100
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
-JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
-  ON dea.location = vac.location
-  AND dea.date = vac.date
-WHERE dea.continent IS NOT NULL 
-ORDER BY 2,3
-
-
-
--- Using CTE to perform Calculation on Partition By in previous query
--- Shows Percentage of Population that has recieved at least one Covid Vaccine
-
-WITH popVSvac AS
-(
-SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccination
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
-JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
-	ON dea.location = vac.location
-	AND dea.date = vac.date
-WHERE dea.continent IS NOT NULL 
-AND vac.new_vaccinations IS NOT NULL
---ORDER BY 2,3
+SELECT *
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE 
+ParcelID IN (
+  SELECT ParcelID
+  FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+  GROUP BY ParcelID
+  HAVING COUNT(*) > 1
 )
-SELECT *, (RollingPeopleVaccination/population)*100 AS VaccinationPercentage
-FROM popVSvac
+--AND PropertyAddress IS NULL
+ORDER BY ParcelID;
 
 
+-- Ingenious method to select row with duplicate parcel ids, by joining same tables and selecting rows with same parcel ids but not uniqueIDs. 
 
--- Using Temp Table to perform Calculation on Partition By in previous query
 
-CREATE TEMPORARY TABLE PercentPopulationVaccinated AS
+SELECT a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, IFNULL(a.PropertyAddress, b.PropertyAddress)
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS a
+JOIN `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS b
+ON a.ParcelID = b.ParcelID
+AND a.UniqueID_ <> b.UniqueID_  
+WHERE a.PropertyAddress IS NULL
+
+UPDATE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+SET PropertyAddress = IFNULL(a.PropertyAddress, b.PropertyAddress)
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS a
+JOIN `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS b
+ON a.ParcelID = b.ParcelID
+AND a.UniqueID_ <> b.UniqueID_  
+WHERE a.PropertyAddress IS NULL
+
+CREATE OR REPLACE TEMPORARY TABLE temp_table AS
+SELECT ParcelID, MAX(PropertyAddress) as PropertyAddress
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE PropertyAddress IS NOT NULL
+GROUP BY ParcelID;
+UPDATE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` main
+SET main.PropertyAddress = temp_table.PropertyAddress
+FROM temp_table
+WHERE main.ParcelID = temp_table.ParcelID
+AND main.PropertyAddress IS NULL;
+
+
+--------------------------------------------------------------------------------------------------------------------------
+
+-- Breaking out Address into Individual Columns (Address, City, State)
+
+
+SELECT SUBSTRING(PropertyAddress, 1, STRPOS(PropertyAddress, ',') - 1) AS address
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+--RCA why earlier query not working. 
+SELECT PropertyAddress
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE STRPOS(PropertyAddress, ',') = 0
+
+--SUBSTRING Query didnt work so found the RCA. There were 3 row of dirty data with no ','. DELETING THERE ROWs. 
+DELETE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE STRPOS(PropertyAddress, ',') = 0
+
+
+SELECT   SUBSTRING(PropertyAddress, 1, STRPOS(PropertyAddress, ',') - 1) AS property_split_address,
+  TRIM(SUBSTRING(PropertyAddress, STRPOS(PropertyAddress, ',') + 1, LENGTH(PropertyAddress))) AS property_split_city
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+
+-- Create backup table before replacing the original data
+CREATE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup2` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+-- Update the table with new columns
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
 SELECT 
-  dea.continent, 
-  dea.location, 
-  dea.date, 
-  dea.population, 
-  vac.new_vaccinations, 
-  SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccination
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
-JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
-  ON dea.location = vac.location
-  AND dea.date = vac.date
-WHERE dea.continent IS NOT NULL 
-AND vac.new_vaccinations IS NOT NULL;
-
-SELECT *, (RollingPeopleVaccination/population)*100 AS VaccinationPercentage
-FROM PercentPopulationVaccinated;
+  *, 
+  TRIM(SUBSTRING(PropertyAddress, 1, STRPOS(PropertyAddress, ',') - 1)) AS property_split_address,
+  TRIM(SUBSTRING(PropertyAddress, STRPOS(PropertyAddress, ',') + 1, LENGTH(PropertyAddress))) AS property_split_city
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`;
 
 
+-- Create backup table before replacing the original data
+CREATE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup3` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
 
--- Creating View to store data for later visualizations
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup3`
 
-CREATE VIEW `rock-elevator-382815.SQL_Project.PercentPopulationVaccinated` AS
-SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
-       SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) AS RollingPeopleVaccinated
--- , (RollingPeopleVaccinated/population)*100
-FROM `rock-elevator-382815.SQL_Project.Covid_Death` AS dea
-JOIN `rock-elevator-382815.SQL_Project.COVID_Vacinations` AS vac
-  ON dea.location = vac.location
-  AND dea.date = vac.date
-WHERE dea.continent IS NOT NULL
- 
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
+SELECT 
+  *,
+  TRIM(SPLIT(OwnerAddress, ',')[SAFE_OFFSET(0)]) AS owner_split_address,
+  TRIM(SPLIT(OwnerAddress, ',')[SAFE_OFFSET(1)]) AS owner_split_city,
+  TRIM(SPLIT(OwnerAddress, ',')[SAFE_OFFSET(2)]) AS owner_split_state
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+--------------------------------------------------------------------------------------------------------------------------
+
+
+-- Change Y and N to Yes and No in "Sold as Vacant" field
+
+
+-- Create backup table before replacing the original data
+CREATE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup4` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+UPDATE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+SET SoldAsVacant = CASE 
+  WHEN SoldAsVacant = 'Y' THEN 'Yes'
+  WHEN SoldAsVacant = 'N' THEN 'No'
+  ELSE SoldAsVacant
+  END
+WHERE TRUE
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-- Remove Duplicates
+/*
+WITH row_num_CTE AS(
+  SELECT *, ROW_NUMBER() OVER( PARTITION BY ParcelID, PropertyAddress, SalePrice, SaleDate, LegalReference 
+                              ORDER BY UniqueID_ ) ROW_NUMBER
+  FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+)
+DELETE 
+FROM row_num_CTE
+WHERE ROW_NUMBER > 1
+--ORDER BY PropertyAddress
+*/
+
+DELETE FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+WHERE UniqueID_ IN (
+  SELECT UniqueID_
+  FROM (
+    SELECT UniqueID_, ROW_NUMBER() OVER( 
+        PARTITION BY ParcelID, PropertyAddress, SalePrice, SaleDate, LegalReference 
+        ORDER BY UniqueID_ ) AS ROW_NUMBER
+    FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+  ) 
+  WHERE ROW_NUMBER > 1
+);
+
+
+---------------------------------------------------------------------------------------------------------
+
+-- Delete Unused Columns
+
+CREATE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing_backup5` AS
+SELECT * FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+
+/*
+ALTER TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
+DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress, SaleDate
+*/
+
+CREATE OR REPLACE TABLE `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing` AS
+SELECT UniqueID_,  ParcelID,  LandUse, SalePrice, LegalReference, SoldAsVacant, OwnerName, Acreage, LandValue, BuildingValue,  TotalValue,  YearBuilt,  Bedrooms, FullBath, HalfBath, property_split_address,  property_split_city, owner_split_address, owner_split_city,  owner_split_state
+FROM `rock-elevator-382815.SQL_Project_Cleaning.NashvilleHousing`
